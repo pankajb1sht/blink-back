@@ -53,9 +53,7 @@ app.use(express.json({ limit: '1mb' }));
 
 // CORS setup with proper origin
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://teleblink.zaas.xyz'] // Remove trailing slash
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: '*',  // Allow all origins
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids', 'Origin', 'Accept'],
   exposedHeaders: ['X-Action-Version', 'X-Blockchain-Ids'],
