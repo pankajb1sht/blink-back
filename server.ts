@@ -18,8 +18,35 @@ import {
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
 
+interface BlinkRequest {
+  channelName: string;
+  description: string;
+  fee: number;
+  publicKey: string;
+  coverImage?: string;
+  telegramLink: string;
+}
+
+interface BlinkData extends BlinkRequest {
+  route: string;
+  createdAt: string;
+  link: string;
+}
+
+interface StorageData {
+  blinks: BlinkData[];
+}
+
 const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
+
+// Response headers
+const actionHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Action-Version, X-Blockchain-Ids'
+};
 
 // CORS setup
 const corsOptions = {
@@ -132,6 +159,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       publicKey,
       createdAt: new Date().toISOString(),
       telegramLink,
+      link: '',
     };
 
     // Save to storage
