@@ -22,34 +22,43 @@ const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // CORS setup
-app.use(cors());
+const corsOptions = {
+  origin: '*', // Change this to a specific origin in production
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
+};
+app.use(cors(corsOptions)); // Apply CORS middleware globally
+
+// Handle preflight requests explicitly
+app.options('/api/blink/create', (req, res) => {
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
+});
+
+// Handle preflight requests for dynamic routes
+app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { channelName } = req.params;
+    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    const data = await readData();
+    const blink = data.blinks.find(b => b.route === route);
+
+    if (!blink) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+    return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CORS setup
 app.use(express.json());
-
-interface BlinkRequest {
-  channelName: string;
-  description: string;
-  fee: number;
-  coverImage: string | undefined;
-  publicKey: string;
-  link: string;
-  telegramLink: string;
-}
-
-interface BlinkData {
-  route: string;
-  channelName: string;
-  description: string;
-  fee: number;
-  coverImage: string;
-  publicKey: string;
-  link: string;
-  createdAt: string;
-  telegramLink: string;
-}
-
-interface StorageData {
-  blinks: BlinkData[];
-}
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -79,7 +88,7 @@ function validateChannelName(name: string): boolean {
 // Create a dynamic "blink"
 app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Response, next: NextFunction) => {
   try {
-    const { channelName, description, fee, coverImage = 'https://example.com/default-icon.png', publicKey, link, telegramLink } = req.body;
+    const { channelName, description, fee, coverImage , publicKey, telegramLink } = req.body;
 
     // Input validation
     if (!validateChannelName(channelName)) {
@@ -94,9 +103,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     if (!publicKey.trim()) {
       return res.status(400).json({ error: 'Public key is required' });
     }
-    if (!link || !isValidUrl(link)) {
-      return res.status(400).json({ error: 'Valid link is required' });
-    }
+    
 
     // Validate public key
     try {
@@ -123,7 +130,6 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       fee,
       coverImage: coverImage || 'https://example.com/default-icon.png',
       publicKey,
-      link,
       createdAt: new Date().toISOString(),
       telegramLink,
     };
@@ -214,7 +220,8 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-    const connection = new Connection(clusterApiUrl('devnet'));
+    const connection = new Connection(clusterApiUrl('mainnet-beta')); // Changed to mainnet-beta
+
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
     const postResponse = await createPostResponse({
@@ -225,11 +232,11 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    // Add link to the response without modifying the createPostResponse type
+    res.set(actionHeaders); // Set required headers
     return res.json({
       ...postResponse,
       channelLink: blink.link,
-      telegramLink: blink.telegramLink
+      telegramLink: blink.telegramLink,
     });
   } catch (error) {
     if (error instanceof Error) {
@@ -271,5 +278,5 @@ app.use(errorHandler);
 // Start the server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
