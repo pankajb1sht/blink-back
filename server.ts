@@ -23,13 +23,21 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 
 // CORS setup
 const corsOptions = {
-  origin: '*', // Update origin for production
+  origin: '*', // Change this to a specific origin in production
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
 };
-app.use(cors(corsOptions));
+app.use(cors(corsOptions)); // Apply CORS middleware globally
+
 // Handle preflight requests explicitly
-app.options('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.options('/api/blink/create', (req, res) => {
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
+});
+
+// Handle preflight requests for dynamic routes
+app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { channelName } = req.params;
     const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -41,19 +49,14 @@ app.options('/api/:channelName', async (req: Request<{ channelName: string }>, r
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    const payload: ActionGetResponse = {
-      icon: blink.coverImage,
-      label: 'Join our Telegram channel',
-      title: blink.channelName,
-      description: blink.description,
-    };
-
-    res.set(actionHeaders); // Set required headers
-    return res.json(payload);
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+    return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
   } catch (error) {
     next(error);
   }
 });
+
 app.use(express.json());
 
 interface BlinkRequest {
@@ -266,7 +269,6 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
 
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
-
     const postResponse = await createPostResponse({
       fields: {
         transaction,
@@ -289,27 +291,9 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
   }
 });
 
-// Debug endpoint - list all channels
-app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const data = await readData();
-    return res.json(data.blinks.map(({ channelName, description, fee, route, createdAt }) => ({
-      channelName,
-      description,
-      fee,
-      route,
-      createdAt,
-    })));
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Apply error handler
+// Error handler middleware
 app.use(errorHandler);
 
-// Start the server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(3000, () => {
+  console.log('Server is running on port 3000');
 });
