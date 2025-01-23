@@ -5,6 +5,7 @@ import path from 'path';
 import {
   ActionGetResponse,
   MEMO_PROGRAM_ID,
+  ACTIONS_CORS_HEADERS,
   createPostResponse,
 } from '@solana/actions';
 import {
@@ -41,13 +42,6 @@ interface StorageData {
 const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// Response headers
-const actionHeaders = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Action-Version, X-Blockchain-Ids'
-};
 
 // CORS setup
 const corsOptions = {
@@ -197,8 +191,10 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
       description: blink.description,
     };
 
-    res.set(actionHeaders);
-res.json(payload);
+    ////////////////////////////////
+res.json(payload,{
+  headers: ACTIONS_CORS_HEADERS,
+});
 
   } catch (error) {
     next(error);
@@ -263,11 +259,13 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders);
+    ///////////////////////////////////
 res.json({
   ...postResponse,
   channelLink: blink.link,
   telegramLink: blink.telegramLink
+},{
+  headers: ACTIONS_CORS_HEADERS,
 });
 
   } catch (error) {
