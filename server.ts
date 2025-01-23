@@ -17,6 +17,7 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
+import rateLimit from 'express-rate-limit';
 
 interface BlinkRequest {
   channelName: string;
@@ -47,11 +48,26 @@ const actionHeaders = {
   'X-Blockchain-Ids': 'solana',
 };
 
-// CORS setup
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+
+// Apply rate limiting to all routes
+app.use(limiter);
+
+// Body size limit
+app.use(express.json({ limit: '1mb' }));
+
+// CORS setup with proper origin
 const corsOptions = {
-  origin: '*', // Change this to a specific origin in production
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-frontend-domain.com'] 
+    : '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
+  maxAge: 600 // Cache preflight requests for 10 minutes
 };
 app.use(cors(corsOptions)); // Apply CORS middleware globally
 
@@ -111,29 +127,54 @@ function validateChannelName(name: string): boolean {
   return /^[a-zA-Z0-9-_\s]{3,50}$/.test(name);
 }
 
+// Validation helpers
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return url.startsWith('http://') || url.startsWith('https://');
+  } catch {
+    return false;
+  }
+}
+
+function isValidTelegramLink(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 't.me' || parsed.hostname === 'telegram.me';
+  } catch {
+    return false;
+  }
+}
+
 // Create a dynamic "blink"
 app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Response, next: NextFunction) => {
   try {
-    const { channelName, description, fee, coverImage , publicKey, telegramLink } = req.body;
+    const { channelName, description, fee, coverImage, publicKey, telegramLink } = req.body;
 
     // Input validation
     if (!validateChannelName(channelName)) {
       return res.status(400).json({ error: 'Invalid channel name. Use only letters, numbers, spaces, hyphens, and underscores (3-50 characters).' });
     }
-    if (description.trim().length < 10) {
-      return res.status(400).json({ error: 'Description must be at least 10 characters long' });
+    if (description.trim().length < 10 || description.length > 1000) {
+      return res.status(400).json({ error: 'Description must be between 10 and 1000 characters' });
     }
-    if (fee <= 0) {
-      return res.status(400).json({ error: 'Invalid fee amount' });
+    if (fee <= 0 || fee > 1000) {
+      return res.status(400).json({ error: 'Fee must be between 0 and 1000' });
     }
     if (!publicKey.trim()) {
       return res.status(400).json({ error: 'Public key is required' });
     }
-    
+    if (coverImage && !isValidUrl(coverImage)) {
+      return res.status(400).json({ error: 'Invalid cover image URL' });
+    }
+    if (!isValidTelegramLink(telegramLink)) {
+      return res.status(400).json({ error: 'Invalid Telegram link. Must be a t.me or telegram.me URL' });
+    }
 
     // Validate public key
+    let pubKey: PublicKey;
     try {
-      new PublicKey(publicKey);
+      pubKey = new PublicKey(publicKey);
     } catch (error) {
       return res.status(400).json({ error: 'Invalid public key format' });
     }
@@ -141,7 +182,13 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
     
     // Read existing data
-    const data = await readData();
+    let data: StorageData;
+    try {
+      data = await readData();
+    } catch (error) {
+      console.error('Error reading data:', error);
+      return res.status(500).json({ error: 'Error accessing storage' });
+    }
     
     // Check for duplicate route
     if (data.blinks.some(b => b.route === route)) {
@@ -155,15 +202,20 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       description,
       fee,
       coverImage: coverImage || 'https://example.com/default-icon.png',
-      publicKey,
+      publicKey: pubKey.toString(),
       createdAt: new Date().toISOString(),
       telegramLink,
       link: `${process.env.BASE_URL || 'https://blink-back.onrender.com'}${route}`,
     };
 
     // Save to storage
-    data.blinks.push(newBlink);
-    await writeData(data);
+    try {
+      data.blinks.push(newBlink);
+      await writeData(data);
+    } catch (error) {
+      console.error('Error writing data:', error);
+      return res.status(500).json({ error: 'Error saving data' });
+    }
 
     return res.status(201).json({ 
       message: 'Channel created successfully', 
@@ -213,6 +265,13 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       return res.status(400).json({ error: 'Account is required' });
     }
 
+    let accountPubKey: PublicKey;
+    try {
+      accountPubKey = new PublicKey(account);
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid account public key' });
+    }
+
     const data = await readData();
     const blink = data.blinks.find(b => b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`);
 
@@ -220,10 +279,19 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-     const connection = new Connection(clusterApiUrl('devnet')); // Changed to mainnet-beta
-    
-    const accountPubKey = new PublicKey(account);
+    const connection = new Connection(clusterApiUrl('devnet'));
     const recipientPubKey = new PublicKey(blink.publicKey);
+
+    // Check account balance
+    try {
+      const balance = await connection.getBalance(accountPubKey);
+      const requiredAmount = blink.fee * LAMPORTS_PER_SOL;
+      if (balance < requiredAmount) {
+        return res.status(400).json({ error: 'Insufficient balance' });
+      }
+    } catch (error) {
+      return res.status(500).json({ error: 'Error checking balance' });
+    }
 
     const transaction = new Transaction().add(
       SystemProgram.transfer({
@@ -233,12 +301,13 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-  transaction.feePayer = account;
-    transaction.recentBlockhash = (
-      await connection.getLatestBlockhash()
-    ).blockhash;
-
-   
+    transaction.feePayer = accountPubKey;
+    
+    try {
+      transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    } catch (error) {
+      return res.status(500).json({ error: 'Error getting recent blockhash' });
+    }
 
     const postResponse = await createPostResponse({
       fields: {
@@ -248,10 +317,9 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-res.set(actionHeaders).json({
-  ...postResponse,
-  telegramLink: blink.telegramLink
-});
+    res.set(actionHeaders).json({
+      ...postResponse,
+    });
 
   } catch (error) {
     if (error instanceof Error) {
@@ -276,16 +344,6 @@ app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunc
     next(error);
   }
 });
-
-// Add URL validation helper
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Apply error handler
 app.use(errorHandler);
