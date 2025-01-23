@@ -29,7 +29,31 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 // Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
+app.options('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+  try {
+    const { channelName } = req.params;
+    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    const data = await readData();
+    const blink = data.blinks.find(b => b.route === route);
+
+    if (!blink) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const payload: ActionGetResponse = {
+      icon: blink.coverImage,
+      label: 'Join our Telegram channel',
+      title: blink.channelName,
+      description: blink.description,
+    };
+
+    res.set(actionHeaders); // Set required headers
+    return res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+});
 app.use(express.json());
 
 interface BlinkRequest {
