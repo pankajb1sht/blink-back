@@ -22,7 +22,12 @@ const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // CORS setup
-app.use(cors());
+const corsOptions = {
+  origin: '*', // Update origin for production
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 interface BlinkRequest {
@@ -51,6 +56,12 @@ interface StorageData {
   blinks: BlinkData[];
 }
 
+// Action API headers
+const actionHeaders = {
+  'X-Action-Version': '1.0',
+  'X-Blockchain-Ids': 'solana',
+};
+
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err);
@@ -74,6 +85,16 @@ async function writeData(data: StorageData): Promise<void> {
 // Validate channel name
 function validateChannelName(name: string): boolean {
   return /^[a-zA-Z0-9-_\s]{3,50}$/.test(name);
+}
+
+// Add URL validation helper
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Create a dynamic "blink"
@@ -121,7 +142,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       channelName,
       description,
       fee,
-      coverImage: coverImage || 'https://example.com/default-icon.png',
+      coverImage,
       publicKey,
       link,
       createdAt: new Date().toISOString(),
@@ -162,6 +183,7 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
       description: blink.description,
     };
 
+    res.set(actionHeaders); // Set required headers
     return res.json(payload);
   } catch (error) {
     next(error);
@@ -225,11 +247,11 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    // Add link to the response without modifying the createPostResponse type
+    res.set(actionHeaders); // Set required headers
     return res.json({
       ...postResponse,
       channelLink: blink.link,
-      telegramLink: blink.telegramLink
+      telegramLink: blink.telegramLink,
     });
   } catch (error) {
     if (error instanceof Error) {
@@ -248,22 +270,12 @@ app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunc
       description,
       fee,
       route,
-      createdAt
+      createdAt,
     })));
   } catch (error) {
     next(error);
   }
 });
-
-// Add URL validation helper
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Apply error handler
 app.use(errorHandler);
