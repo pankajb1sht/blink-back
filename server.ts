@@ -195,8 +195,8 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
       description: blink.description,
     };
 
-    res.set(actionHeaders);
-res.json(payload);
+   
+res.set(actionHeaders).json(payload);
 
   } catch (error) {
     next(error);
@@ -220,6 +220,8 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       return res.status(404).json({ error: 'Channel not found' });
     }
 
+     const connection = new Connection(clusterApiUrl('devnet')); // Changed to mainnet-beta
+    
     const accountPubKey = new PublicKey(account);
     const recipientPubKey = new PublicKey(blink.publicKey);
 
@@ -231,11 +233,12 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-    transaction.feePayer = accountPubKey;
+  transaction.feePayer = account;
+    transaction.recentBlockhash = (
+      await connection.getLatestBlockhash()
+    ).blockhash;
 
-    const connection = new Connection(clusterApiUrl('devnet')); // Changed to mainnet-beta
-
-    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+   
 
     const postResponse = await createPostResponse({
       fields: {
@@ -245,10 +248,8 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders);
-res.json({
+res.set(actionHeaders).json({
   ...postResponse,
-  channelLink: blink.link,
   telegramLink: blink.telegramLink
 });
 
