@@ -3,11 +3,10 @@ import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
 import {
+  ActionGetResponse,
   MEMO_PROGRAM_ID,
-  ACTIONS_CORS_HEADERS,
   createPostResponse,
 } from '@solana/actions';
-import { ActionGetResponse, ActionPostResponse, TransactionResponse } from '@solana/actions-spec';
 import {
   clusterApiUrl,
   ComputeBudgetProgram,
@@ -42,35 +41,50 @@ interface StorageData {
 const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
+// Response headers
+const actionHeaders = {
+  'X-Action-Version': '1',
+  'X-Blockchain-Ids': 'solana',
+};
+
 // CORS setup
-app.use(express.json());
-app.use(cors({
-  origin: '*',
+const corsOptions = {
+  origin: '*', // Change this to a specific origin in production
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
-  exposedHeaders: ['X-Action-Version', 'X-Blockchain-Ids'],
-}));
-
-// Middleware to validate Solana Actions headers
-const validateActionHeaders = (req: Request, res: Response, next: NextFunction) => {
-  const actionVersion = req.header('X-Action-Version');
-  const blockchainIds = req.header('X-Blockchain-Ids');
-
-  if (!actionVersion) {
-    return res.status(400).json({ error: 'X-Action-Version header is required' });
-  }
-
-  if (!blockchainIds) {
-    return res.status(400).json({ error: 'X-Blockchain-Ids header is required' });
-  }
-
-  // Validate blockchain IDs format (should be "solana")
-  if (!blockchainIds.split(',').includes('solana')) {
-    return res.status(400).json({ error: 'Solana blockchain ID is required' });
-  }
-
-  next();
 };
+app.use(cors(corsOptions)); // Apply CORS middleware globally
+
+// Handle preflight requests explicitly
+app.options('/api/blink/create', (req: Request, res: Response) => {
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
+});
+
+// Handle preflight requests for dynamic routes
+app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { channelName } = req.params;
+    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    const data = await readData();
+    const blink = data.blinks.find(b => b.route === route);
+
+    if (!blink) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
+    return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CORS setup
+app.use(express.json());
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -162,7 +176,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
 });
 
 // Handle dynamic GET responses
-app.get('/api/:channelName', validateActionHeaders, async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
   try {
     const { channelName } = req.params;
     const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -181,12 +195,8 @@ app.get('/api/:channelName', validateActionHeaders, async (req: Request<{ channe
       description: blink.description,
     };
 
-    res.set({
-      'X-Action-Version': '1',
-      'X-Blockchain-Ids': 'solana',
-    });
-
-    res.json(payload);
+    res.set(actionHeaders);
+res.json(payload);
 
   } catch (error) {
     next(error);
@@ -194,7 +204,7 @@ app.get('/api/:channelName', validateActionHeaders, async (req: Request<{ channe
 });
 
 // Handle POST requests for transactions
-app.post('/api/:channelName', validateActionHeaders, async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
   try {
     const { channelName } = req.params;
     const { account } = req.body;
@@ -243,20 +253,20 @@ app.post('/api/:channelName', validateActionHeaders, async (req: Request<{ chann
 
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
-    const payload: ActionPostResponse = await createPostResponse({
+    const postResponse = await createPostResponse({
       fields: {
-        type: "transaction",
         transaction,
-        message: `here's your Link ${blink.telegramLink} :)`,
+        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.telegramLink})`,
+        type: 'transaction',
       },
     });
 
-    res.set({
-      'X-Action-Version': '1',
-      'X-Blockchain-Ids': 'solana',
-    });
-
-    res.json(payload);
+    res.set(actionHeaders);
+res.json({
+  ...postResponse,
+  channelLink: blink.link,
+  telegramLink: blink.telegramLink
+});
 
   } catch (error) {
     if (error instanceof Error) {
@@ -294,32 +304,6 @@ function isValidUrl(url: string): boolean {
 
 // Apply error handler
 app.use(errorHandler);
-
-// Modify the preflight response to include proper headers
-app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { channelName } = req.params;
-    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
-    
-    const data = await readData();
-    const blink = data.blinks.find(b => b.route === route);
-
-    if (!blink) {
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Action-Version, X-Blockchain-Ids',
-      'Access-Control-Expose-Headers': 'X-Action-Version, X-Blockchain-Ids',
-    });
-    
-    return res.sendStatus(200);
-  } catch (error) {
-    next(error);
-  }
-});
 
 // Start the server
 const PORT = process.env.PORT || 5000;
