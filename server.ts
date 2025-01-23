@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import {
   ActionGetResponse,
   MEMO_PROGRAM_ID,
@@ -21,54 +22,39 @@ import {
 const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// CORS setup
-const corsOptions = {
-  origin: '*', // Update origin for production
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
-};
-app.use(cors(corsOptions));
-// Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
-app.use(express.json());
+// Generate unique code
+function generateUniqueCode(): string {
+  return crypto.randomBytes(6).toString('hex');
+}
 
 interface BlinkRequest {
   channelName: string;
   description: string;
   fee: number;
-  coverImage: string | undefined;
+  coverImage?: string;
   publicKey: string;
   link: string;
   telegramLink: string;
 }
 
-interface BlinkData {
-  route: string;
-  channelName: string;
-  description: string;
-  fee: number;
-  coverImage: string;
-  publicKey: string;
-  link: string;
+interface BlinkData extends BlinkRequest {
+  uniqueCode: string;
   createdAt: string;
-  telegramLink: string;
 }
 
 interface StorageData {
   blinks: BlinkData[];
 }
 
-// Action API headers
-const actionHeaders = {
-  'X-Action-Version': '1.0',
-  'X-Blockchain-Ids': 'solana',
+// CORS setup with more secure defaults
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || 'https://yourdomain.com',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
 };
-
-// Error handling middleware
-const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(express.json());
 
 // Data storage functions
 async function readData(): Promise<StorageData> {
@@ -84,12 +70,11 @@ async function writeData(data: StorageData): Promise<void> {
   await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// Validate channel name
+// Validation helpers
 function validateChannelName(name: string): boolean {
   return /^[a-zA-Z0-9-_\s]{3,50}$/.test(name);
 }
 
-// Add URL validation helper
 function isValidUrl(url: string): boolean {
   try {
     new URL(url);
@@ -104,12 +89,12 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
   try {
     const { channelName, description, fee, coverImage = 'https://example.com/default-icon.png', publicKey, link, telegramLink } = req.body;
 
-    // Input validation
+    // Validation checks (similar to previous implementation)
     if (!validateChannelName(channelName)) {
-      return res.status(400).json({ error: 'Invalid channel name. Use only letters, numbers, spaces, hyphens, and underscores (3-50 characters).' });
+      return res.status(400).json({ error: 'Invalid channel name' });
     }
     if (description.trim().length < 10) {
-      return res.status(400).json({ error: 'Description must be at least 10 characters long' });
+      return res.status(400).json({ error: 'Description too short' });
     }
     if (fee <= 0) {
       return res.status(400).json({ error: 'Invalid fee amount' });
@@ -118,7 +103,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       return res.status(400).json({ error: 'Public key is required' });
     }
     if (!link || !isValidUrl(link)) {
-      return res.status(400).json({ error: 'Valid link is required' });
+      return res.status(400).json({ error: 'Invalid link' });
     }
 
     // Validate public key
@@ -128,27 +113,22 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       return res.status(400).json({ error: 'Invalid public key format' });
     }
 
-    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
-    
-    // Read existing data
     const data = await readData();
     
-    // Check for duplicate route
-    if (data.blinks.some(b => b.route === route)) {
-      return res.status(400).json({ error: 'Channel name already exists' });
-    }
+    // Generate unique code
+    const uniqueCode = generateUniqueCode();
 
     // Create new blink
     const newBlink: BlinkData = {
-      route,
+      uniqueCode,
       channelName,
       description,
       fee,
       coverImage,
       publicKey,
       link,
-      createdAt: new Date().toISOString(),
       telegramLink,
+      createdAt: new Date().toISOString(),
     };
 
     // Save to storage
@@ -156,9 +136,9 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     await writeData(data);
 
     return res.status(201).json({ 
-      message: 'Channel created successfully', 
-      route,
-      channelName: newBlink.channelName
+      message: 'Blink created successfully', 
+      uniqueCode,
+      link: `/api/blink/${uniqueCode}`
     });
   } catch (error) {
     next(error);
@@ -166,26 +146,29 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
 });
 
 // Handle dynamic GET responses
-app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.get('/api/blink/:uniqueCode', async (req: Request<{ uniqueCode: string }>, res: Response, next: NextFunction) => {
   try {
-    const { channelName } = req.params;
-    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
+    const { uniqueCode } = req.params;
     
     const data = await readData();
-    const blink = data.blinks.find(b => b.route === route);
+    const blink = data.blinks.find(b => b.uniqueCode === uniqueCode);
 
     if (!blink) {
-      return res.status(404).json({ error: 'Channel not found' });
+      return res.status(404).json({ error: 'Blink not found' });
     }
 
     const payload: ActionGetResponse = {
       icon: blink.coverImage,
-      label: 'Join our Telegram channel',
+      label: `Join for ${blink.fee} SOL`,
       title: blink.channelName,
-      description: blink.description,
+      description: `${blink.description} (Fee: ${blink.fee} SOL)`,
     };
 
-    res.set(actionHeaders); // Set required headers
+    res.set({
+      'X-Action-Version': '1.0',
+      'X-Blockchain-Ids': 'solana',
+    });
+    
     return res.json(payload);
   } catch (error) {
     next(error);
@@ -193,9 +176,9 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
 });
 
 // Handle POST requests for transactions
-app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.post('/api/blink/:uniqueCode', async (req: Request<{ uniqueCode: string }>, res: Response, next: NextFunction) => {
   try {
-    const { channelName } = req.params;
+    const { uniqueCode } = req.params;
     const { account } = req.body;
 
     if (!account) {
@@ -203,10 +186,10 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
     }
 
     const data = await readData();
-    const blink = data.blinks.find(b => b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`);
+    const blink = data.blinks.find(b => b.uniqueCode === uniqueCode);
 
     if (!blink) {
-      return res.status(404).json({ error: 'Channel not found' });
+      return res.status(404).json({ error: 'Blink not found' });
     }
 
     const accountPubKey = new PublicKey(account);
@@ -249,7 +232,11 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders); // Set required headers
+    res.set({
+      'X-Action-Version': '1.0', 
+      'X-Blockchain-Ids': 'solana',
+    });
+    
     return res.json({
       ...postResponse,
       channelLink: blink.link,
@@ -263,15 +250,15 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
   }
 });
 
-// Debug endpoint - list all channels
+// List channels endpoint
 app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await readData();
-    return res.json(data.blinks.map(({ channelName, description, fee, route, createdAt }) => ({
+    return res.json(data.blinks.map(({ channelName, description, fee, uniqueCode, createdAt }) => ({
       channelName,
       description,
       fee,
-      route,
+      uniqueCode,
       createdAt,
     })));
   } catch (error) {
@@ -279,11 +266,14 @@ app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunc
   }
 });
 
-// Apply error handler
-app.use(errorHandler);
+// Error handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
