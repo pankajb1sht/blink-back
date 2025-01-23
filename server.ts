@@ -160,7 +160,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       publicKey,
       createdAt: new Date().toISOString(),
       telegramLink,
-      link: `${process.env.BASE_URL || 'http://localhost:5000'}${route}`,
+      link: `${process.env.BASE_URL || 'https://blink-back.onrender.com'}${route}`,
     };
 
     // Save to storage
