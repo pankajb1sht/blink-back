@@ -144,9 +144,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     if (!publicKey.trim()) {
       return res.status(400).json({ error: 'Public key is required' });
     }
-    if (!coverImage || !isValidUrl(coverImage)) {
-      return res.status(400).json({ error: 'Valid link is required' });
-    }
+    
 
     // Validate public key
     try {
@@ -173,7 +171,6 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       fee,
       coverImage,
       publicKey,
-      link,
       createdAt: new Date().toISOString(),
       telegramLink,
     };
