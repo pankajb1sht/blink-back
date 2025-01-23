@@ -233,22 +233,6 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
 
     transaction.feePayer = accountPubKey;
 
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }),
-      new TransactionInstruction({
-        keys: [],
-        programId: new PublicKey(MEMO_PROGRAM_ID),
-        data: Buffer.from(
-          JSON.stringify({
-            action: 'create-blink',
-            channelName: blink.channelName,
-            description: 'Thanks for joining!',
-            fee: blink.fee,
-          })
-        ),
-      })
-    );
-
     const connection = new Connection(clusterApiUrl('devnet')); // Changed to mainnet-beta
 
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
