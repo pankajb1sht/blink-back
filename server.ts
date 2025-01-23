@@ -22,41 +22,7 @@ const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // CORS setup
-const corsOptions = {
-  origin: '*', // Change this to a specific origin in production
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
-};
-app.use(cors(corsOptions)); // Apply CORS middleware globally
-
-// Handle preflight requests explicitly
-app.options('/api/blink/create', (req, res) => {
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
-  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
-});
-
-// Handle preflight requests for dynamic routes
-app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { channelName } = req.params;
-    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
-    
-    const data = await readData();
-    const blink = data.blinks.find(b => b.route === route);
-
-    if (!blink) {
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
-    return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
-  } catch (error) {
-    next(error);
-  }
-});
-
+app.use(cors());
 app.use(express.json());
 
 interface BlinkRequest {
@@ -85,12 +51,6 @@ interface StorageData {
   blinks: BlinkData[];
 }
 
-// Action API headers
-const actionHeaders = {
-  'X-Action-Version': '1.0',
-  'X-Blockchain-Ids': 'solana',
-};
-
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err);
@@ -116,20 +76,10 @@ function validateChannelName(name: string): boolean {
   return /^[a-zA-Z0-9-_\s]{3,50}$/.test(name);
 }
 
-// Add URL validation helper
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // Create a dynamic "blink"
 app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Response, next: NextFunction) => {
   try {
-    const { channelName, description, fee, coverImage , publicKey, telegramLink } = req.body;
+    const { channelName, description, fee, coverImage = 'https://example.com/default-icon.png', publicKey, link, telegramLink } = req.body;
 
     // Input validation
     if (!validateChannelName(channelName)) {
@@ -144,7 +94,9 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     if (!publicKey.trim()) {
       return res.status(400).json({ error: 'Public key is required' });
     }
-    
+    if (!link || !isValidUrl(link)) {
+      return res.status(400).json({ error: 'Valid link is required' });
+    }
 
     // Validate public key
     try {
@@ -169,8 +121,9 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       channelName,
       description,
       fee,
-      coverImage,
+      coverImage: coverImage || 'https://example.com/default-icon.png',
       publicKey,
+      link,
       createdAt: new Date().toISOString(),
       telegramLink,
     };
@@ -209,7 +162,6 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
       description: blink.description,
     };
 
-    res.set(actionHeaders); // Set required headers
     return res.json(payload);
   } catch (error) {
     next(error);
@@ -262,8 +214,7 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-    const connection = new Connection(clusterApiUrl('mainnet-beta')); // Changed to mainnet-beta
-
+    const connection = new Connection(clusterApiUrl('devnet'));
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
     const postResponse = await createPostResponse({
@@ -274,11 +225,11 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders); // Set required headers
+    // Add link to the response without modifying the createPostResponse type
     return res.json({
       ...postResponse,
       channelLink: blink.link,
-      telegramLink: blink.telegramLink,
+      telegramLink: blink.telegramLink
     });
   } catch (error) {
     if (error instanceof Error) {
@@ -288,9 +239,37 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
   }
 });
 
-// Error handler middleware
+// Debug endpoint - list all channels
+app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await readData();
+    return res.json(data.blinks.map(({ channelName, description, fee, route, createdAt }) => ({
+      channelName,
+      description,
+      fee,
+      route,
+      createdAt
+    })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add URL validation helper
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Apply error handler
 app.use(errorHandler);
 
-app.listen(3000, () => {
-  console.log('Server is running on port 3000');
+// Start the server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
