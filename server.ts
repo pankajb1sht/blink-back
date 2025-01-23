@@ -129,7 +129,7 @@ function isValidUrl(url: string): boolean {
 // Create a dynamic "blink"
 app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Response, next: NextFunction) => {
   try {
-    const { channelName, description, fee, coverImage = 'https://example.com/default-icon.png', publicKey, link, telegramLink } = req.body;
+    const { channelName, description, fee, coverImage , publicKey, telegramLink } = req.body;
 
     // Input validation
     if (!validateChannelName(channelName)) {
@@ -144,7 +144,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     if (!publicKey.trim()) {
       return res.status(400).json({ error: 'Public key is required' });
     }
-    if (!link || !isValidUrl(link)) {
+    if (!coverImage || !isValidUrl(coverImage)) {
       return res.status(400).json({ error: 'Valid link is required' });
     }
 
