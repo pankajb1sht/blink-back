@@ -197,9 +197,9 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
       description: blink.description,
     };
 
-    return res.json(payload, {
-    headers: actionHeaders,
-  });
+    res.set(actionHeaders);
+res.json(payload);
+
   } catch (error) {
     next(error);
   }
@@ -263,14 +263,13 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders); // Set required headers
-    return res.json({
-      ...postResponse,
-      channelLink: blink.link,
-      telegramLink: blink.telegramLink,
-    },{
-    headers: actionHeaders,
-  });
+    res.set(actionHeaders);
+res.json({
+  ...postResponse,
+  channelLink: blink.link,
+  telegramLink: blink.telegramLink
+});
+
   } catch (error) {
     if (error instanceof Error) {
       return res.status(400).json({ error: error.message });
