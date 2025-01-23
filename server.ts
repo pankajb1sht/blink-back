@@ -198,7 +198,7 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
     };
 
     return res.json(payload, {
-    headers: ACTIONS_CORS_HEADERS,
+    headers: actionHeaders,
   });
   } catch (error) {
     next(error);
@@ -269,7 +269,7 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       channelLink: blink.link,
       telegramLink: blink.telegramLink,
     },{
-    headers: ACTIONS_CORS_HEADERS,
+    headers: actionHeaders,
   });
   } catch (error) {
     if (error instanceof Error) {
