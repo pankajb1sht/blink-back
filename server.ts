@@ -48,51 +48,25 @@ const actionHeaders = {
   'X-Blockchain-Ids': 'solana',
 };
 
-
 // Body size limit
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // CORS setup with proper origin
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://teleblink.zaas.xyz/'] 
-    : '*',
+    ? ['https://teleblink.zaas.xyz'] // Remove trailing slash
+    : ['http://localhost:5173', 'http://localhost:3000'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
- 
+  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids', 'Origin', 'Accept'],
+  exposedHeaders: ['X-Action-Version', 'X-Blockchain-Ids'],
+  credentials: false,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+  maxAge: 86400 // 24 hours
 };
-app.use(cors(corsOptions)); // Apply CORS middleware globally
 
-// Handle preflight requests explicitly
-app.options('/api/blink/create', (req: Request, res: Response) => {
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
-  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
-});
-
-// Handle preflight requests for dynamic routes
-app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { channelName } = req.params;
-    const route = `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`;
-    
-    const data = await readData();
-    const blink = data.blinks.find(b => b.route === route);
-
-    if (!blink) {
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
-    return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
-  } catch (error) {
-    next(error);
-  }
-});
-
-// CORS setup
-app.use(express.json());
+// Apply CORS middleware globally
+app.use(cors(corsOptions));
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
