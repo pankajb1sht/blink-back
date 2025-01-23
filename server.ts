@@ -262,8 +262,10 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-    const connection = new Connection(clusterApiUrl('devnet'));
+    const connection = new Connection(clusterApiUrl('mainnet-beta')); // Changed to mainnet-beta
+
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
 
     const postResponse = await createPostResponse({
       fields: {
@@ -272,15 +274,13 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
         type: 'transaction',
       },
     });
-///////////////////////////
-    const signature = await connection.sendRawTransaction(transaction.serialize());
-        await connection.confirmTransaction(signature);
 
-        res.set(actionHeaders);
-        return res.json({
-            signature,
-            message: 'Transaction confirmed!',
-        });
+    res.set(actionHeaders); // Set required headers
+    return res.json({
+      ...postResponse,
+      channelLink: blink.link,
+      telegramLink: blink.telegramLink,
+    });
   } catch (error) {
     if (error instanceof Error) {
       return res.status(400).json({ error: error.message });
