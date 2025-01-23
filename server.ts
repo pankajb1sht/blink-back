@@ -50,16 +50,16 @@ const actionHeaders = {
 
 
 // Body size limit
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json());
 
 // CORS setup with proper origin
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.com'] 
+    ? ['https://teleblink.zaas.xyz/'] 
     : '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
-  maxAge: 600 // Cache preflight requests for 10 minutes
+ 
 };
 app.use(cors(corsOptions)); // Apply CORS middleware globally
 
