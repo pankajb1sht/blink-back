@@ -43,21 +43,6 @@ const app = express();
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 
-// CORS setup
-const corsOptions = {
-  origin: '*', // Change this to a specific origin in production
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids'],
-};
-app.use(cors(corsOptions)); // Apply CORS middleware globally
-
-// Handle preflight requests explicitly
-app.options('/api/blink/create', (req: Request, res: Response) => {
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
-  res.sendStatus(200); // Respond with HTTP 200 for preflight requests
-});
-
 // Handle preflight requests for dynamic routes
 app.options('/api/:channelName', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -71,7 +56,7 @@ app.options('/api/:channelName', async (req: Request, res: Response, next: NextF
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set(headers: ACTIONS_CORS_HEADERS,);
     res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
     return res.sendStatus(200); // Respond with HTTP 200 for preflight requests
   } catch (error) {
@@ -251,22 +236,17 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
 
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
-    const postResponse = await createPostResponse({
+    const payload: ActionPostResponse = await createPostResponse({
       fields: {
         transaction,
-        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.telegramLink})`,
-        type: 'transaction',
+        message: "here's your Link${blink.telegramLink} :)",
       },
     });
 
     ///////////////////////////////////
-res.json({
-  ...postResponse,
-  channelLink: blink.link,
-  telegramLink: blink.telegramLink
-},{
-  headers: ACTIONS_CORS_HEADERS,
-});
+return Response.json(payload, {
+      headers: ACTIONS_CORS_HEADERS,
+    });
 
   } catch (error) {
     if (error instanceof Error) {
