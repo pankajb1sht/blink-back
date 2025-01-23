@@ -249,7 +249,7 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       })
     );
 
-    const connection = new Connection(clusterApiUrl('mainnet-beta')); // Changed to mainnet-beta
+    const connection = new Connection(clusterApiUrl('devnet')); // Changed to mainnet-beta
 
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
