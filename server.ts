@@ -27,10 +27,11 @@ interface BlinkRequest {
   telegramLink: string;
 }
 
-interface BlinkData extends BlinkRequest {
+interface BlinkData extends Omit<BlinkRequest, 'coverImage'> {
   route: string;
   createdAt: string;
   link: string;
+  coverImage: string;
 }
 
 interface StorageData {
@@ -57,7 +58,7 @@ const corsOptions = {
 app.use(cors(corsOptions)); // Apply CORS middleware globally
 
 // Handle preflight requests explicitly
-app.options('/api/blink/create', (req, res) => {
+app.options('/api/blink/create', (req: Request, res: Response) => {
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, X-Action-Version, X-Blockchain-Ids');
   res.sendStatus(200); // Respond with HTTP 200 for preflight requests
@@ -159,7 +160,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       publicKey,
       createdAt: new Date().toISOString(),
       telegramLink,
-      link: '',
+      link: `${process.env.BASE_URL || 'http://localhost:5000'}${route}`,
     };
 
     // Save to storage
