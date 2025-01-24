@@ -220,7 +220,7 @@ res.set(actionHeaders).json(payload);
 });
 
 // Handle POST requests for transactions
-app.post('/api/:channelName', actionCorsMiddleware(), async (req: Request, res: Response) => {
+app.post('/api/:channelName', cors(actionCorsOptions), async (req: Request, res: Response) => {
   try {
     const { channelName } = req.params;
     const { account } = req.body;
@@ -259,11 +259,12 @@ app.post('/api/:channelName', actionCorsMiddleware(), async (req: Request, res: 
       lastValidBlockHeight
     }).add(transferInstruction);
 
-    // Create post response
-    const payload = await createPostResponse({
+    // Create post response with full type
+    const payload: ActionPostResponse = await createPostResponse({
       fields: {
         transaction,
-        message: `Thanks for joining ${blink.channelName}! Access link: ${blink.link}`
+        message: `Thanks for joining ${blink.channelName}! Access link: ${blink.link}`,
+        type: 'transaction'
       }
     });
 
@@ -271,7 +272,9 @@ app.post('/api/:channelName', actionCorsMiddleware(), async (req: Request, res: 
 
   } catch (error) {
     console.error(error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ 
+      error: error instanceof Error ? error.message : 'An unknown error occurred' 
+    });
   }
 });
 
