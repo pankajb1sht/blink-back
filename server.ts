@@ -49,11 +49,6 @@ const actionHeaders = {
   'X-Blockchain-Ids': 'solana',
 };
 
-/// Apply CORS middleware globally
-app.use(actionCorsMiddleware());
-
-
-
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -201,7 +196,7 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
     };
 
    
-res.json(payload);
+res.set(actionHeaders).json(payload);
 
   } catch (error) {
     next(error);
