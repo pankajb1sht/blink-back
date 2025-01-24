@@ -41,6 +41,8 @@ interface StorageData {
 }
 
 const app = express();
+// Enable CORS for all origins
+app.use(cors());
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // Response headers
