@@ -220,7 +220,7 @@ res.set(actionHeaders).json(payload);
 });
 
 // Handle POST requests for transactions
-app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
+app.post('/api/:channelName', actionCorsMiddleware(), async (req: Request, res: Response) => {
   try {
     const { channelName } = req.params;
     const { account } = req.body;
@@ -230,34 +230,48 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
     }
 
     const data = await readData();
-    const blink = data.blinks.find(b => b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`);
+    const blink = data.blinks.find(b => 
+      b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`
+    );
 
     if (!blink) {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    const postResponse = await createPostResponse({
-      fields: {
-        transaction: {
-          // Explicitly define transaction structure
-          instructions: [{
-            programId: SystemProgram.programId.toString(),
-            keys: [
-              { pubkey: account, isSigner: true, isWritable: true },
-              { pubkey: blink.publicKey, isSigner: false, isWritable: true }
-            ],
-            data: Buffer.from([2, ...Buffer.from((blink.fee * LAMPORTS_PER_SOL).toString())]) // Transfer instruction
-          }]
-        },
-        message: `Thanks for joining! Channel: ${blink.channelName}`,
-        type: 'transaction'
-      },
+    const connection = new Connection(clusterApiUrl('devnet'));
+    const fromPubkey = new PublicKey(account);
+    const toPubkey = new PublicKey(blink.publicKey);
+
+    // Get latest blockhash
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+
+    // Create transfer instruction
+    const transferInstruction = SystemProgram.transfer({
+      fromPubkey,
+      toPubkey,
+      lamports: blink.fee * LAMPORTS_PER_SOL
     });
 
-    res.set(actionHeaders).json(postResponse);
+    // Create transaction
+    const transaction = new Transaction({
+      feePayer: fromPubkey,
+      blockhash,
+      lastValidBlockHeight
+    }).add(transferInstruction);
+
+    // Create post response
+    const payload = await createPostResponse({
+      fields: {
+        transaction,
+        message: `Thanks for joining ${blink.channelName}! Access link: ${blink.link}`
+      }
+    });
+
+    res.json(payload);
 
   } catch (error) {
-    next(error);
+    console.error(error);
+    res.status(400).json({ error: error.message });
   }
 });
 
