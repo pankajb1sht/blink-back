@@ -26,7 +26,7 @@ interface BlinkRequest {
   fee: number;
   publicKey: string;
   coverImage?: string;
-  telegramLink: string;
+  link: string;
 }
 
 interface BlinkData extends Omit<BlinkRequest, 'coverImage'> {
@@ -100,7 +100,7 @@ function isValidTelegramLink(url: string): boolean {
 // Create a dynamic "blink"
 app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Response, next: NextFunction) => {
   try {
-    const { channelName, description, fee, coverImage, publicKey, telegramLink } = req.body;
+    const { channelName, description, fee, coverImage, publicKey, link } = req.body;
 
     // Input validation
     if (!validateChannelName(channelName)) {
@@ -118,7 +118,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
     if (coverImage && !isValidUrl(coverImage)) {
       return res.status(400).json({ error: 'Invalid cover image URL' });
     }
-    if (!isValidTelegramLink(telegramLink)) {
+    if (!isValidTelegramLink(link)) {
       return res.status(400).json({ error: 'Invalid Telegram link. Must be a t.me or telegram.me URL' });
     }
 
@@ -155,8 +155,7 @@ app.post('/api/blink/create', async (req: Request<{}, {}, BlinkRequest>, res: Re
       coverImage: coverImage || 'https://example.com/default-icon.png',
       publicKey: pubKey.toString(),
       createdAt: new Date().toISOString(),
-      telegramLink,
-      link: `${process.env.BASE_URL || 'https://blink-back.onrender.com'}${route}`,
+      link,
     };
 
     // Save to storage
@@ -258,7 +257,7 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
     const postResponse = await createPostResponse({
       fields: {
         transaction,
-        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.telegramLink})`,
+        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.link})`,
         type: 'transaction',
       },
     });
