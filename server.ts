@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import {
   ActionGetResponse,
+  actionCorsMiddleware,
   MEMO_PROGRAM_ID,
   createPostResponse,
 } from '@solana/actions';
@@ -48,8 +49,8 @@ const actionHeaders = {
   'X-Blockchain-Ids': 'solana',
 };
 
-// Body size limit
-app.use(express.json({ limit: '1mb' }));
+/// Apply CORS middleware globally
+app.use(actionCorsMiddleware());
 
 // CORS setup with proper origin
 const corsOptions = {
@@ -63,8 +64,7 @@ const corsOptions = {
   maxAge: 86400 // 24 hours
 };
 
-// Apply CORS middleware globally
-app.use(cors(corsOptions));
+
 
 // Error handling middleware
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -219,8 +219,8 @@ res.set(actionHeaders).json(payload);
   }
 });
 
-// Handle POST requests for transactions
-app.post('/api/:channelName', cors(actionCorsOptions), async (req: Request, res: Response) => {
+// POST transaction for channel payments
+app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res: Response, next: NextFunction) => {
   try {
     const { channelName } = req.params;
     const { account } = req.body;
@@ -229,55 +229,63 @@ app.post('/api/:channelName', cors(actionCorsOptions), async (req: Request, res:
       return res.status(400).json({ error: 'Account is required' });
     }
 
+    let accountPubKey: PublicKey;
+    try {
+      accountPubKey = new PublicKey(account);
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid account public key' });
+    }
+
     const data = await readData();
-    const blink = data.blinks.find(b => 
-      b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`
-    );
+    const blink = data.blinks.find(b => b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`);
 
     if (!blink) {
       return res.status(404).json({ error: 'Channel not found' });
     }
 
     const connection = new Connection(clusterApiUrl('devnet'));
-    const fromPubkey = new PublicKey(account);
-    const toPubkey = new PublicKey(blink.publicKey);
+    const recipientPubKey = new PublicKey(blink.publicKey);
 
-    // Get latest blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    // Check account balance
+    try {
+      const balance = await connection.getBalance(accountPubKey);
+      const requiredAmount = blink.fee * LAMPORTS_PER_SOL;
+      if (balance < requiredAmount) {
+        return res.status(400).json({ error: 'Insufficient balance' });
+      }
+    } catch (error) {
+      return res.status(500).json({ error: 'Error checking balance' });
+    }
 
-    // Create transfer instruction
-    const transferInstruction = SystemProgram.transfer({
-      fromPubkey,
-      toPubkey,
-      lamports: blink.fee * LAMPORTS_PER_SOL
+    const transferSolInstruction = SystemProgram.transfer({
+      fromPubkey: accountPubKey,
+      toPubkey: recipientPubKey,
+      lamports: blink.fee * LAMPORTS_PER_SOL,
     });
 
-    // Create transaction
     const transaction = new Transaction({
-      feePayer: fromPubkey,
-      blockhash,
-      lastValidBlockHeight
-    }).add(transferInstruction);
+      feePayer: accountPubKey,
+      recentBlockhash: (await connection.getLatestBlockhash()).blockhash,
+    }).add(transferSolInstruction);
 
-    // Create post response with full type
-    const payload: ActionPostResponse = await createPostResponse({
+    const postResponse = await createPostResponse({
       fields: {
         transaction,
-        message: `Thanks for joining ${blink.channelName}! Access link: ${blink.link}`,
-        type: 'transaction'
-      }
+        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.telegramLink})`,
+        type: 'transaction',
+      },
     });
 
-    res.json(payload);
-
+    res.set(actionHeaders).json({
+      ...postResponse,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(400).json({ 
-      error: error instanceof Error ? error.message : 'An unknown error occurred' 
-    });
+    if (error instanceof Error) {
+      return res.status(400).json({ error: error.message });
+    }
+    next(error);
   }
 });
-
 // Debug endpoint - list all channels
 app.get('/api/channels/list', async (req: Request, res: Response, next: NextFunction) => {
   try {
