@@ -229,13 +229,6 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       return res.status(400).json({ error: 'Account is required' });
     }
 
-    let accountPubKey: PublicKey;
-    try {
-      accountPubKey = new PublicKey(account);
-    } catch (error) {
-      return res.status(400).json({ error: 'Invalid account public key' });
-    }
-
     const data = await readData();
     const blink = data.blinks.find(b => b.route === `/api/${channelName.toLowerCase().replace(/\s+/g, '-')}`);
 
@@ -243,25 +236,21 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    const connection = new Connection(clusterApiUrl('devnet'));
-    const recipientPubKey = new PublicKey(blink.publicKey);
-
-    const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: accountPubKey,
-        toPubkey: recipientPubKey,
-        lamports: blink.fee * LAMPORTS_PER_SOL,
-      })
-    );
-
-    transaction.feePayer = accountPubKey;
-    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-
     const postResponse = await createPostResponse({
       fields: {
-        transaction,
-        message: `Thanks for joining! After payment, you can access the channel at: ${blink.link} (Telegram: ${blink.telegramLink})`,
-        type: 'transaction',
+        transaction: {
+          // Explicitly define transaction structure
+          instructions: [{
+            programId: SystemProgram.programId.toString(),
+            keys: [
+              { pubkey: account, isSigner: true, isWritable: true },
+              { pubkey: blink.publicKey, isSigner: false, isWritable: true }
+            ],
+            data: Buffer.from([2, ...Buffer.from((blink.fee * LAMPORTS_PER_SOL).toString())]) // Transfer instruction
+          }]
+        },
+        message: `Thanks for joining! Channel: ${blink.channelName}`,
+        type: 'transaction'
       },
     });
 
