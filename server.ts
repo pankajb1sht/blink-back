@@ -52,17 +52,6 @@ const actionHeaders = {
 /// Apply CORS middleware globally
 app.use(actionCorsMiddleware());
 
-// CORS setup with proper origin
-const corsOptions = {
-  origin: '*',  // Allow all origins
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Action-Version', 'X-Blockchain-Ids', 'Origin', 'Accept'],
-  exposedHeaders: ['X-Action-Version', 'X-Blockchain-Ids'],
-  credentials: false,
-  preflightContinue: false,
-  optionsSuccessStatus: 204,
-  maxAge: 86400 // 24 hours
-};
 
 
 
@@ -212,7 +201,7 @@ app.get('/api/:channelName', async (req: Request<{ channelName: string }>, res: 
     };
 
    
-res.set(actionHeaders).json(payload);
+res.json(payload);
 
   } catch (error) {
     next(error);
