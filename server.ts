@@ -246,17 +246,6 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
     const connection = new Connection(clusterApiUrl('devnet'));
     const recipientPubKey = new PublicKey(blink.publicKey);
 
-    // Check account balance
-    try {
-      const balance = await connection.getBalance(accountPubKey);
-      const requiredAmount = blink.fee * LAMPORTS_PER_SOL;
-      if (balance < requiredAmount) {
-        return res.status(400).json({ error: 'Insufficient balance' });
-      }
-    } catch (error) {
-      return res.status(500).json({ error: 'Error checking balance' });
-    }
-
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: accountPubKey,
@@ -266,12 +255,7 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
     );
 
     transaction.feePayer = accountPubKey;
-    
-    try {
-      transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-    } catch (error) {
-      return res.status(500).json({ error: 'Error getting recent blockhash' });
-    }
+    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
     const postResponse = await createPostResponse({
       fields: {
@@ -281,14 +265,9 @@ app.post('/api/:channelName', async (req: Request<{ channelName: string }>, res:
       },
     });
 
-    res.set(actionHeaders).json({
-      ...postResponse,
-    });
+    res.set(actionHeaders).json(postResponse);
 
   } catch (error) {
-    if (error instanceof Error) {
-      return res.status(400).json({ error: error.message });
-    }
     next(error);
   }
 });
